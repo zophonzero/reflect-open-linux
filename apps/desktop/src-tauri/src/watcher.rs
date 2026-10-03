@@ -23,7 +23,13 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use file_id::{get_file_id, FileId};
-use notify::{RecommendedWatcher, RecursiveMode};
+#[cfg(not(target_os = "linux"))]
+use notify::RecommendedWatcher;
+use notify::RecursiveMode;
+#[cfg(target_os = "linux")]
+mod content_watcher;
+#[cfg(target_os = "linux")]
+use content_watcher::ContentWatcher as RecommendedWatcher;
 use notify_debouncer_full::{new_debouncer_opt, DebounceEventResult, Debouncer, FileIdCache};
 use reflect_graph_paths::{
     classify, evicted_logical_path, eviction_placeholder, has_pruned_component, is_pruned_dir_name,
@@ -315,8 +321,14 @@ pub fn watch_start(
         Duration::from_millis(400),
         None,
         move |result: DebounceEventResult| {
-            let Ok(events) = result else {
-                return; // watch errors are transient; the next batch recovers
+            let events = match result {
+                Ok(events) => events,
+                Err(errors) => {
+                    tracing::warn!(?errors, "file watcher lost events; reconciling index");
+                    crate::fs::invalidate_file_catalog(&app.state::<GraphState>(), &handler_root);
+                    let _ = app.emit(RECONCILE_EVENT, ());
+                    return;
+                }
             };
             let rescan_demanded = events.iter().any(|event| event.need_rescan());
             let paths: Vec<PathBuf> = events

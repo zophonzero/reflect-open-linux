@@ -4989,6 +4989,7 @@ dependencies = [
  "dbus-secret-service-keyring-store",
  "dirs 7.0.0",
  "dispatch2",
+ "dom_query",
  "fastembed",
  "file-id",
  "git2",
@@ -5039,6 +5040,7 @@ dependencies = [
  "walkdir",
  "windows-native-keyring-store",
  "xattr",
+ "zbus",
  "zip 8.6.0",
 ]
 

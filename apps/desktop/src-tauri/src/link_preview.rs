@@ -1,7 +1,7 @@
-//! Apple LinkPresentation preview-image capability.
+//! Representative preview images for captured links.
 //!
 //! Apple platforms ask the system for one representative image. Other
-//! platforms return no image and never perform a network request.
+//! Linux fetches public OpenGraph images through the bounded HTTP transport.
 
 use crate::error::AppResult;
 
@@ -128,7 +128,11 @@ mod platform {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
+#[path = "link_preview_linux.rs"]
+mod platform;
+
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux")))]
 mod platform {
     use crate::error::AppResult;
 

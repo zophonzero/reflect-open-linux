@@ -12,7 +12,7 @@ import { SettingsField } from '@/components/settings/field.tsx'
 import { SettingsSection } from '@/components/settings/section.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { useBridgeReady } from '@/hooks/use-bridge-ready.ts'
-import { isMacosDesktop } from '@/lib/platform.ts'
+import { supportsAgentSkills } from '@/lib/desktop-capabilities.ts'
 import { mutationKeys, mutationScopeIds, queryKeys } from '@/lib/query-client.ts'
 import { useGraph } from '@/providers/graph-provider.tsx'
 
@@ -32,7 +32,7 @@ function writeAgentSkill(variables: AgentSkillAction): Promise<AgentSkillStatus>
  * Settings → Agents: one-click install of a per-graph agent skill under
  * `~/.agents/skills/`. The skill is named after the graph and teaches coding
  * agents (Claude Code and friends) to read this graph through the bundled
- * `reflect` CLI. macOS desktop only, like the iCloud section — the navigator
+ * `reflect` CLI. Available on supported desktop bundles — the navigator
  * hides the entry through the same gate (see use-visible-settings-sections).
  */
 export function AgentsSection(): ReactElement | null {
@@ -40,10 +40,11 @@ export function AgentsSection(): ReactElement | null {
   const queryClient = useQueryClient()
   const queryKey = queryKeys.agentSkill.status(graph?.root)
   const bridgeReady = useBridgeReady()
+  const supported = supportsAgentSkills()
   const { data: status } = useQuery({
     queryKey,
     queryFn: agentSkillStatus,
-    enabled: bridgeReady && isMacosDesktop && graph !== null,
+    enabled: bridgeReady && supported && graph !== null,
   })
   const mutation = useMutation({
     mutationKey: mutationKeys.agentSkill.write(graph?.root),
@@ -54,7 +55,7 @@ export function AgentsSection(): ReactElement | null {
     },
   })
 
-  if (!isMacosDesktop || graph === null) {
+  if (!supported || graph === null) {
     return null
   }
 

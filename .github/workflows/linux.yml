@@ -1,0 +1,43 @@
+name: Linux
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/linux.yml'
+      - 'packaging/linux/**'
+      - 'apps/desktop/**'
+      - 'packages/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'pnpm-lock.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - uses: ./.github/actions/setup-rust
+      - name: Test Linux packaging
+        run: pnpm test --run apps/desktop/scripts/release-linux.test.mjs apps/desktop/src/lib/desktop-capabilities.test.ts
+      - name: Build Linux archive and Arch recipe
+        run: pnpm release:linux build
+      - name: Upload native Linux package files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reflect-linux-x86_64
+          path: target/linux-artifacts/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

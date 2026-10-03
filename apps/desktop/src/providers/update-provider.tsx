@@ -9,7 +9,7 @@ import {
 } from 'react'
 import { attachUpdateToasts } from '@/components/update-toasts.ts'
 import { useMainWindowEffect } from '@/hooks/use-main-window-effect.ts'
-import { isNativeShell } from '@/lib/platform.ts'
+import { supportsAppUpdates } from '@/lib/desktop-capabilities.ts'
 import {
   createUpdateController,
   type UpdateController,
@@ -19,9 +19,8 @@ import {
 interface UpdateContextValue {
   state: UpdateState
   /**
-   * False outside a desktop native shell (browser dev, iOS/Android) — hide
-   * update UI entirely. Mobile ships through the app stores, and the updater
-   * plugins are only registered under `#[cfg(desktop)]`.
+   * False for browser previews, mobile, and package-managed Linux builds.
+   * Only macOS and Windows bundles register the updater plugin.
    */
   supported: boolean
   checkNow: () => Promise<void>
@@ -50,7 +49,7 @@ interface UpdateProviderProps {
  * any graph is open.
  */
 export function UpdateProvider({ children, autoCheck }: UpdateProviderProps): ReactElement {
-  const supported = isNativeShell()
+  const supported = supportsAppUpdates()
   const resolvedAutoCheck = autoCheck ?? (supported && !import.meta.env.DEV)
   const [controller, setController] = useState<UpdateController | null>(null)
 
