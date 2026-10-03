@@ -27,7 +27,8 @@
     "tauri:ios:dev:sim": "pnpm --filter @reflect/desktop tauri:ios:dev:sim",
     "tauri:build:dev": "pnpm --filter @reflect/desktop tauri:build:dev",
     "tauri:build:beta": "pnpm --filter @reflect/desktop tauri:build:beta",
-    "postinstall": "simple-git-hooks"
+    "postinstall": "simple-git-hooks",
+    "release:linux": "pnpm --filter @reflect/desktop release:linux"
   },
   "devDependencies": {
     "@ocavue/eslint-config": "^4.18.0",

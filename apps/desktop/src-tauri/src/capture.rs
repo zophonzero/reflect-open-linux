@@ -21,18 +21,18 @@ use crate::web_fetch::{fetch_capture_html, fetch_capture_json};
 
 /// The native-messaging host name browsers route on; must match the name the
 /// extension passes to `runtime.sendNativeMessage`.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const HOST_NAME: &str = "app.reflect.capture";
 
 /// The sidecar binary, staged beside the app binary by the Tauri bundler (and
 /// beside the dev binary by `tauri dev`).
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 const HOST_BINARY: &str = "reflect-capture-host";
 
 /// Extension IDs allowed to launch the host. The first is the dev/unpacked ID,
 /// pinned by the `key` field in `apps/extension/wxt.config.ts`; the second is
 /// the published Chrome Web Store listing.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const EXTENSION_ORIGINS: [&str; 2] = [
     "chrome-extension://dlbliojklpickgimjdmjjdnbjdiomjik/",
     "chrome-extension://ccabifmooehighoonjeiololjfofkhkd/",
@@ -79,15 +79,10 @@ fn atomic_write_bytes_to(path: &Path, contents: &[u8]) -> AppResult<()> {
     Ok(())
 }
 
-// ---- browser manifests (macOS) ------------------------------------------------
-//
-// Everything here is `cfg(target_os = "macos")` (plus `test`, so the rules
-// stay unit-tested on every CI platform): the first release registers
-// manifests on macOS only — Windows registry keys and Linux paths land with
-// Plan 15 packaging.
+// ---- browser manifests -------------------------------------------------------
 
 /// The native-messaging manifest content for a host binary at `host_path`.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn host_manifest_json(host_path: &Path) -> String {
     serde_json::to_string_pretty(&serde_json::json!({
         "name": HOST_NAME,
@@ -116,13 +111,26 @@ const MACOS_BROWSER_DIRS: [&str; 10] = [
     "Arc/User Data",
 ];
 
+#[cfg(any(target_os = "linux", test))]
+const LINUX_BROWSER_DIRS: [&str; 9] = [
+    "google-chrome",
+    "google-chrome-beta",
+    "google-chrome-unstable",
+    "chromium",
+    "BraveSoftware/Brave-Browser",
+    "microsoft-edge",
+    "microsoft-edge-beta",
+    "vivaldi",
+    "opera",
+];
+
 /// `NativeMessagingHosts/` dirs for browsers actually present under
 /// `app_support` — manifests are only written for detected browsers (spraying
 /// them for uninstalled ones is the Claude-Desktop mistake the spike calls
 /// out). Pure given the base dir, so the detection rule is unit-testable.
-#[cfg(any(target_os = "macos", test))]
-fn detected_manifest_dirs(app_support: &Path) -> Vec<PathBuf> {
-    MACOS_BROWSER_DIRS
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+fn detected_manifest_dirs(app_support: &Path, browser_dirs: &[&str]) -> Vec<PathBuf> {
+    browser_dirs
         .iter()
         .map(|dir| app_support.join(dir))
         .filter(|dir| dir.is_dir())
@@ -133,11 +141,15 @@ fn detected_manifest_dirs(app_support: &Path) -> Vec<PathBuf> {
 /// Write (or rewrite) the host manifest for every detected browser. Runs on
 /// every launch and graph switch — rewriting self-heals app moves and macOS
 /// app translocation, per the bridge spike.
-#[cfg(any(target_os = "macos", test))]
-fn register_manifests(app_support: &Path, host_path: &Path) -> AppResult<usize> {
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+fn register_manifests(
+    app_support: &Path,
+    host_path: &Path,
+    browser_dirs: &[&str],
+) -> AppResult<usize> {
     let manifest = host_manifest_json(host_path);
     let mut written = 0;
-    for dir in detected_manifest_dirs(app_support) {
+    for dir in detected_manifest_dirs(app_support, browser_dirs) {
         fs::create_dir_all(&dir)?;
         atomic_write_to(&dir.join(format!("{HOST_NAME}.json")), &manifest)?;
         written += 1;
@@ -147,7 +159,7 @@ fn register_manifests(app_support: &Path, host_path: &Path) -> AppResult<usize> 
 
 /// The staged host binary, next to the running executable in both dev
 /// (`target/debug/`) and the bundle (`Reflect.app/Contents/MacOS/`).
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn host_binary_path() -> AppResult<PathBuf> {
     let exe = std::env::current_exe().map_err(|err| AppError::io(err.to_string()))?;
     let dir = exe
@@ -158,15 +170,14 @@ fn host_binary_path() -> AppResult<PathBuf> {
 
 /// Point the capture host at the active graph and register browser manifests.
 /// Called by the frontend after every graph open. Manifest registration is
-/// macOS-only for now (the first release ships macOS; Windows registry keys
-/// and Linux paths land with Plan 15 packaging).
+/// supported on macOS and Linux, using the platform config directory.
 #[tauri::command]
 pub fn capture_host_register(state: State<GraphState>) -> AppResult<()> {
     let root = current_root(&state)?;
     fs::create_dir_all(root.join(INBOX_DIR))?;
     atomic_write_to(&pointer_path()?, &pointer_json(&root))?;
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let host_path = host_binary_path()?;
         if !host_path.is_file() {
@@ -176,7 +187,11 @@ pub fn capture_host_register(state: State<GraphState>) -> AppResult<()> {
             return Ok(());
         }
         let app_support = dirs::config_dir().ok_or_else(|| AppError::io("no OS config dir"))?;
-        let written = register_manifests(&app_support, &host_path)?;
+        #[cfg(target_os = "macos")]
+        let browser_dirs = &MACOS_BROWSER_DIRS;
+        #[cfg(target_os = "linux")]
+        let browser_dirs = &LINUX_BROWSER_DIRS;
+        let written = register_manifests(&app_support, &host_path, browser_dirs)?;
         tracing::info!(written, "registered capture host manifests");
     }
     Ok(())
@@ -610,7 +625,7 @@ mod tests {
         fs::create_dir_all(dir.path().join("Google/Chrome")).unwrap();
         fs::create_dir_all(dir.path().join("Arc/User Data")).unwrap();
         // Vivaldi absent.
-        let dirs = detected_manifest_dirs(dir.path());
+        let dirs = detected_manifest_dirs(dir.path(), &MACOS_BROWSER_DIRS);
         assert_eq!(
             dirs,
             vec![
@@ -624,13 +639,44 @@ mod tests {
     fn register_writes_a_manifest_per_detected_browser() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("Google/Chrome")).unwrap();
-        let written =
-            register_manifests(dir.path(), Path::new("/bundle/reflect-capture-host")).unwrap();
+        let written = register_manifests(
+            dir.path(),
+            Path::new("/bundle/reflect-capture-host"),
+            &MACOS_BROWSER_DIRS,
+        )
+        .unwrap();
         assert_eq!(written, 1);
         let manifest = dir
             .path()
             .join("Google/Chrome/NativeMessagingHosts/app.reflect.capture.json");
         assert!(manifest.is_file());
+    }
+
+    #[test]
+    fn linux_registration_uses_config_root_and_refreshes_host_path() {
+        let dir = tempfile::tempdir().unwrap();
+        for browser in ["chromium", "BraveSoftware/Brave-Browser"] {
+            fs::create_dir_all(dir.path().join(browser)).unwrap();
+        }
+        for host in [
+            "/old/reflect-capture-host",
+            "/usr/lib/reflect-open/reflect-capture-host",
+        ] {
+            assert_eq!(
+                register_manifests(dir.path(), Path::new(host), &LINUX_BROWSER_DIRS).unwrap(),
+                2
+            );
+            for browser in ["chromium", "BraveSoftware/Brave-Browser"] {
+                let file = dir
+                    .path()
+                    .join(browser)
+                    .join("NativeMessagingHosts/app.reflect.capture.json");
+                let manifest: serde_json::Value =
+                    serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+                assert_eq!(manifest["path"], host);
+            }
+        }
+        assert!(!dir.path().join("google-chrome").exists());
     }
 
     #[test]

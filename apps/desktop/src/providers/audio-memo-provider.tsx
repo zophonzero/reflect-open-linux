@@ -30,6 +30,7 @@ import {
 } from '@/components/audio-memo/recording-reminder.ts'
 import { useAudioMemoPipeline } from '@/hooks/use-audio-memo-pipeline.ts'
 import { useSettings } from '@/providers/settings-provider.tsx'
+import { requestRecordingPermission } from '@/lib/recording-permission.ts'
 import { useSidebar } from '@/providers/sidebar-provider.tsx'
 
 /**
@@ -91,6 +92,9 @@ const UNSUPPORTED_REASON = 'Audio recording is not supported on this platform'
 
 /** Same macOS check as `hasMacosTitleBarOverlay` — settings paths differ per OS. */
 function micDeniedMessage(): string {
+  if (import.meta.env.TAURI_ENV_PLATFORM === 'linux') {
+    return 'Microphone access was denied. Try recording again and choose Allow in the microphone dialog.'
+  }
   const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh')
   return isMac
     ? 'Microphone access was denied. Allow it in System Settings → Privacy & Security → Microphone.'
@@ -114,6 +118,7 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   const stopAndSaveRef = useRef<() => void>(() => {})
   const handleSegmentRef = useRef<(segment: RecorderSegment) => void>(() => {})
   const recorder = useAudioRecorder({
+    requestPermission: requestRecordingPermission,
     segmentMs: AUDIO_MEMO_SEGMENT_MS,
     reminderMs: AUDIO_MEMO_REMINDER_MS,
     onReminder: (elapsedMs) => showRecordingReminder(elapsedMs, () => stopAndSaveRef.current()),

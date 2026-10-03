@@ -30,12 +30,16 @@ mod graph_gitignore;
 mod icloud;
 mod link_preview;
 mod menu;
+mod microphone;
 mod quit;
 mod recents;
 mod secrets;
 mod settings;
 mod skill;
 #[cfg(target_os = "macos")]
+mod wake;
+#[cfg(target_os = "linux")]
+#[path = "wake_linux.rs"]
 mod wake;
 mod web_fetch;
 mod windows;
@@ -116,6 +120,10 @@ fn init_tracing() {
 pub fn run() {
     init_tracing();
     let builder = tauri::Builder::default();
+    #[cfg(target_os = "linux")]
+    let builder = builder
+        .manage(microphone::MicrophoneConsent::default())
+        .on_permission_request(microphone::permission_response);
 
     // Single-instance must be the first plugin so a second launch is caught
     // before any other state spins up: its `deep-link` feature hands the
@@ -177,18 +185,19 @@ pub fn run() {
     // before the window becomes visible — otherwise WKWebView flashes its
     // default white backing between show() and the first HTML paint.
     #[cfg(desktop)]
-    let builder = builder
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
-        .plugin(
-            // Note windows are excluded from state tracking: they cascade
-            // fresh from their opener, and their content-hashed labels would
-            // otherwise accrete in the state file forever.
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(windows::restorable_window_state_flags())
-                .with_filter(|label| !label.starts_with(windows::NOTE_WINDOW_PREFIX))
-                .build(),
-        );
+    let builder = builder.plugin(tauri_plugin_process::init()).plugin(
+        // Note windows are excluded from state tracking: they cascade
+        // fresh from their opener, and their content-hashed labels would
+        // otherwise accrete in the state file forever.
+        tauri_plugin_window_state::Builder::default()
+            .with_state_flags(windows::restorable_window_state_flags())
+            .with_filter(|label| !label.starts_with(windows::NOTE_WINDOW_PREFIX))
+            .build(),
+    );
+
+    // Linux distribution packages are updated by the package manager.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     // Reveal the main window on `PageLoadEvent::Finished`, not on
     // `RunEvent::Ready`. Ready only guarantees plugin init + window-state
@@ -278,6 +287,7 @@ pub fn run() {
             fs::x_archive::x_archive_owners,
             fs::x_syndication::x_syndication_fetch,
             app_version,
+            microphone::microphone_request_access,
             background_task::background_task_begin,
             background_task::background_task_end,
             icloud::storage::mobile_storage,
@@ -397,11 +407,8 @@ pub fn run() {
             // registration hook, which Tauri stores as a single callback.)
             #[cfg(desktop)]
             tauri::RunEvent::Ready => {
-                // Wake-from-sleep is the one moment external iCloud writes
-                // can land without the FSEvents watcher seeing them; the
-                // observer asks the frontend for one full reconcile per wake
-                // (wake.rs).
-                #[cfg(target_os = "macos")]
+                // Repair changes missed while the machine was suspended.
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
                 wake::install(app);
                 let app = app.clone();
                 windows::arm_reveal_fallback(

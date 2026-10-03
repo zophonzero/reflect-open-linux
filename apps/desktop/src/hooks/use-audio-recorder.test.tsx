@@ -80,6 +80,41 @@ afterEach(() => {
 })
 
 describe('useAudioRecorder', () => {
+  it('does not acquire the microphone when native consent is denied', async () => {
+    const { result } = await renderHook(() =>
+      useAudioRecorder({ requestPermission: async () => false }),
+    )
+    await expect(act(async () => await result.current.start())).rejects.toThrow(
+      'Microphone access was denied',
+    )
+    expect(getUserMedia).not.toHaveBeenCalled()
+    expect(result.current.status).toBe('idle')
+  })
+
+  it('cancels while native consent is pending without acquiring a device', async () => {
+    let allow: (value: boolean) => void = () => {}
+    const permission = new Promise<boolean>((resolve) => {
+      allow = resolve
+    })
+    const { result } = await renderHook(() =>
+      useAudioRecorder({ requestPermission: () => permission }),
+    )
+    let pending = Promise.resolve()
+    act(() => {
+      pending = result.current.start()
+    })
+    expect(result.current.status).toBe('requesting')
+    act(() => {
+      result.current.cancel()
+    })
+    await act(async () => {
+      allow(true)
+      await pending
+    })
+    expect(getUserMedia).not.toHaveBeenCalled()
+    expect(result.current.status).toBe('idle')
+  })
+
   it('records with the first supported container and assembles the result', async () => {
     const track = { stop: vi.fn() }
     getUserMedia.mockResolvedValue(fakeStream([track]))

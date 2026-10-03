@@ -19,7 +19,8 @@
     "tauri:ios:dev": "tauri ios dev --config src-tauri/tauri.ios.dev.conf.json",
     "tauri:ios:dev:sim": "tauri ios dev --config src-tauri/tauri.ios.dev.conf.json \"iPhone 17 Pro\" --open",
     "tauri:build:dev": "tauri build --config src-tauri/tauri.dev.conf.json",
-    "tauri:build:beta": "tauri build --config src-tauri/tauri.beta.conf.json"
+    "tauri:build:beta": "tauri build --config src-tauri/tauri.beta.conf.json",
+    "release:linux": "node scripts/release-linux.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

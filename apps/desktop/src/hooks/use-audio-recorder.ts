@@ -33,6 +33,8 @@ export interface RecorderResult {
 }
 
 export interface UseAudioRecorderOptions {
+  /** Native consent, where the webview cannot show its own microphone prompt. */
+  requestPermission?: () => Promise<boolean>
   /** Rotate the recorder each time the session grows by this much. */
   segmentMs?: number
   /** Fire `onReminder` each time the session crosses another multiple of this. */
@@ -217,6 +219,11 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
     setStatus('requesting')
     let input: MediaStream
     try {
+      if (optionsRef.current.requestPermission) {
+        const allowed = await optionsRef.current.requestPermission()
+        if (sessionRef.current !== session) return
+        if (!allowed) throw new DOMException('Microphone access was denied', 'NotAllowedError')
+      }
       input = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch (cause) {
       if (sessionRef.current === session) {
